@@ -1,5 +1,6 @@
 FROM jetbrains/teamcity-minimal-agent:latest
 
+RUN export GITHUB_OAUTH_TOKEN=1b151267468ae1aed3dec5732fe2a388256c38bd
 USER root
 
 # no docs for gems
@@ -23,8 +24,10 @@ ENV SOURCE_RVM="source /usr/share/rvm/scripts/rvm" \
     BUNDLER_CONFIG="bundle config silence_root_warning 1 \
                     && bundle config build.nokogiri --use-system-libraries \
                     && bundle config github.com KipuDevGemsUser:dNsEPTUWMbTumnphFmtjjGb9tKKbtmxT8 \
-                    && bundle config enterprise.contribsys.com aa8ac900:18a34bbd"
+                    && bundle config enterprise.contribsys.com aa8ac900:18a34bbd \
+                    && bundle install"
 
+# install main dependencies for environment
 RUN apt-get update && apt-get install -y --no-install-recommends \
                                         software-properties-common \
                                         gpg-agent \
@@ -36,6 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         streamer1.0-plugins-base \
+        postgresql-client \
+        libxslt-dev \
+        libxml2-dev \
         gstreamer1.0-tools \
         gstreamer1.0-x \
         build-essential \
@@ -51,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nodejs \
         yarn \
         git \
+        jq \
         && rm -rf /var/lib/apt/lists/*
 
 # install google chrome latest
@@ -58,5 +65,19 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     sh -c 'echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' && \
     apt-get update && apt-get install google-chrome-stable --assume-yes
 
+# install redis server
+RUN wget http://download.redis.io/redis-stable.tar.gz && \
+    tar xvzf redis-stable.tar.gz && \
+    make -C ./redis-stable install
+
+# update TC agent properties
+RUN sed -i "/^trap.*/i sed -i '/^systemDir=.*/a auto_authorize=true' /data/teamcity_agent/conf/buildAgent.properties" run-agent.sh
+
+ENV APP /app
+RUN mkdir $APP
+WORKDIR $APP
+ADD Gemfile* $APP/
+
 # install ruby & bundler
 RUN /bin/bash -c "${SOURCE_RVM} && ${RUBY_INSTALL} && ${BUNDLER_INSTALL} && ${BUNDLER_CONFIG}"
+ADD . $APP
